@@ -22,6 +22,7 @@ import operator
 import mimetypes
 import posixpath
 from io import BytesIO as string_io
+from urllib.parse import quote
 
 from django.core.files.uploadhandler import StopUpload
 from django.core.paginator import EmptyPage, Paginator
@@ -165,7 +166,7 @@ def get_all_filesystems(request):
     user_home_dir = fs_home_dir_mapping[fs](request.user)
     config = _get_config(fs, request)
 
-    filesystems.append({'file_system': fs, 'user_home_directory': user_home_dir, 'config': config})
+    filesystems.append({'name': fs, 'user_home_directory': user_home_dir, 'config': config})
 
   return JsonResponse(filesystems, safe=False)
 
@@ -224,7 +225,14 @@ def download(request):
       request.GET.get('disposition') if request.GET.get('disposition') == 'inline' and _can_inline_display(path) else 'attachment'
     )
 
-    response['Content-Disposition'] = f'{content_disposition}; filename="{stats["name"]}"'
+    # Extract filename for HDFS and OFS for now because the path stats object has a bug in fetching name field
+    # TODO: Fix this super old bug when refactoring the underlying HDFS filesystem code
+    filename = os.path.basename(path) if request.fs._get_scheme(path).lower() in ('hdfs', 'ofs') else stats['name']
+
+    # Set the filename in the Content-Disposition header with proper encoding for special characters
+    encoded_filename = quote(filename)
+    response['Content-Disposition'] = f"{content_disposition}; filename*=UTF-8\'\'{encoded_filename}"
+
     response["Last-Modified"] = http_date(stats['mtime'])
     response["Content-Length"] = stats['size']
 

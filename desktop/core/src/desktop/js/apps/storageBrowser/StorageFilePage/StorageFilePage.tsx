@@ -32,15 +32,17 @@ import {
 import useLoadData from '../../../utils/hooks/useLoadData/useLoadData';
 import { getLastKnownConfig } from '../../../config/hueConfig';
 import LoadingErrorWrapper from '../../../reactComponents/LoadingErrorWrapper/LoadingErrorWrapper';
+import { inTrash } from '../../../utils/storageBrowserUtils';
+import { getLastDirOrFileNameFromPath } from '../../../reactComponents/PathBrowser/PathBrowser.util';
 
 interface StorageFilePageProps {
   onReload: () => void;
-  fileName: string;
   fileStats: FileStats;
 }
 
-const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps): JSX.Element => {
+const StorageFilePage = ({ fileStats, onReload }: StorageFilePageProps): JSX.Element => {
   const config = getLastKnownConfig();
+  const fileName = getLastDirOrFileNameFromPath(fileStats.path);
   const fileType = getFileType(fileName);
 
   const { t } = i18nReact.useTranslation();
@@ -53,11 +55,7 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
 
   const { loading: isSaving, save } = useSaveData(SAVE_FILE_API_URL);
 
-  const {
-    data: fileData,
-    loading: loadingPreview,
-    error: errorPreview
-  } = useLoadData<FilePreview>(FILE_PREVIEW_API_URL, {
+  const { data, loading, error } = useLoadData<FilePreview>(FILE_PREVIEW_API_URL, {
     params: {
       path: fileStats.path,
       offset: pageOffset,
@@ -79,7 +77,7 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
 
   const handleCancel = () => {
     setIsEditing(false);
-    setFileContent(fileData?.contents);
+    setFileContent(data?.contents);
   };
 
   const handleSave = () => {
@@ -113,18 +111,19 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
     !isEditing &&
     config?.storage_browser.max_file_editor_size &&
     config?.storage_browser.max_file_editor_size > fileStats.size &&
-    EDITABLE_FILE_FORMATS.has(fileType);
+    EDITABLE_FILE_FORMATS.has(fileType) &&
+    !inTrash(fileStats.path);
 
   const pageStats = {
-    page_number: pageNumber,
-    total_pages: Math.ceil(fileStats.size / pageSize),
-    page_size: 0,
-    total_size: 0
+    pageNumber: pageNumber,
+    totalPages: Math.ceil(fileStats.size / pageSize),
+    pageSize: 0,
+    totalSize: 0
   };
 
   const errorConfig = [
     {
-      enabled: !!errorPreview,
+      enabled: !!error,
       message: t('An error occurred while fetching file content for path "{{path}}".', {
         path: fileStats.path
       }),
@@ -149,7 +148,7 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
           ))}
         </div>
 
-        <LoadingErrorWrapper loading={loadingPreview || isSaving} errors={errorConfig}>
+        <LoadingErrorWrapper loading={loading || isSaving} errors={errorConfig} hideChildren>
           <div className="preview">
             <div className="preview__title-bar">
               {t('Content')}
@@ -169,7 +168,7 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
                       data-testid="preview--save--button"
                       data-event=""
                       onClick={handleSave}
-                      disabled={fileContent === fileData?.contents}
+                      disabled={fileContent === data?.contents}
                     >
                       {t('Save')}
                     </PrimaryButton>
@@ -206,7 +205,7 @@ const StorageFilePage = ({ fileName, fileStats, onReload }: StorageFilePageProps
                     readOnly={!isEditing}
                     className="preview__textarea"
                   />
-                  {!loadingPreview && pageStats.total_pages > 1 && (
+                  {pageStats.totalPages > 1 && (
                     <Pagination setPageNumber={setPageNumber} pageStats={pageStats} />
                   )}
                 </div>
