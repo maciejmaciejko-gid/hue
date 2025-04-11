@@ -90,7 +90,8 @@ RUN ./build/env/bin/pip install --no-cache-dir \
   # otherwise Code: 516, Authentication failed will display \
   infi.clickhouse_orm==1.0.4 \
   mysqlclient==2.2.7 \
-  PyAthena==3.14.1
+  PyAthena==3.14.1 \
+  mozilla-django-oidc==4.0.1
 
 USER hue
 
