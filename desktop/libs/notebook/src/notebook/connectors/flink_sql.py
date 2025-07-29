@@ -134,7 +134,10 @@ class FlinkSqlApi(Api):
     operation_token_key = self._get_operation_token_key()
 
     if self.user.profile.data.get(operation_token_key):
-      return self.user.profile.data[operation_token_key][operation_handle]
+      json_data = self.user.profile.data[operation_token_key]
+      LOG.info(f"Getting operation token; operation_handle={operation_handle}; json_data={json_data}.")
+      result = json_data[operation_handle]
+      return result
 
   def _set_operation_token_info_to_user(self, operation_handle, token):
     self.user = rewrite_user(self.user)
@@ -147,7 +150,7 @@ class FlinkSqlApi(Api):
 
     json_data[operation_token_key][operation_handle] = token
     self.user.profile.update_data(json_data)
-
+    LOG.info(f"Setting operation token; operation_handle={operation_handle}; token={token}; json_data={json_data}.")
     self.user.profile.save()
 
   def _remove_operation_token_info_from_user(self, operation_handle):
@@ -158,7 +161,7 @@ class FlinkSqlApi(Api):
       json_data = self.user.profile.data
       json_data[operation_token_key].pop(operation_handle)
       self.user.profile.json_data = json.dumps(json_data)
-
+      LOG.info(f"Removing operation token for operation={operation_handle}; json_data={json_data}.")
     self.user.profile.save()
 
   def _get_session(self):
@@ -200,6 +203,7 @@ class FlinkSqlApi(Api):
     # TODO: Operations such as add, alter, create, drop, use, load, unload can be executed using simple path via
     # /sessions/:session_handle/configure-session
     operation_handle = self.db.execute_statement(session_handle=session_handle, statement=statement)
+    LOG.info(f"Setting token info in execute(); statement_id={operation_handle['operationHandle']}; token=0.")
     self._set_operation_token_info_to_user(operation_handle['operationHandle'], 0)
 
     return {
@@ -235,6 +239,7 @@ class FlinkSqlApi(Api):
               status = 'closed'
             elif resp.get('status') == 'ERROR':
               status = 'error'
+              LOG.info(f"Removing operation token; statement={statement_id}")
               self._remove_operation_token_info_from_user(statement_id)
               result_resp = self.db.fetch_results(session['id'], statement_id, 0)
               raise QueryError(parse_error(result_resp['errors'][-1]))
@@ -253,6 +258,7 @@ class FlinkSqlApi(Api):
     session = self._get_session()
     statement_id = snippet['result']['handle']['guid']
 
+    LOG.info(f"Fetching token info; statement_id={statement_id}.")
     token = self._get_operation_token_info_from_user(statement_id)
 
     # Is race condition between cancel and fetch possible?
@@ -270,13 +276,12 @@ class FlinkSqlApi(Api):
       url_path = next_result.rsplit('?', 1)[0]
       # Step 2: Extract "token" from URL path
       n = int(url_path.rsplit('/', 1)[-1])
+      if n is None:
+        LOG.error(f"Next result is None: '{next_result}'")
+      LOG.info(f"Setting token info in fetch_results(); statement_id={statement_id}; token={n}.")
       self._set_operation_token_info_to_user(statement_id, n)
 
     data = [db['fields'] for db in resp['results']['data'] if resp and resp['results'] and resp['results']['data']]
-
-    if not bool(next_result):
-      # This will not be required if close_statement one will start working
-      self._remove_operation_token_info_from_user(statement_id)
 
     return {
       'has_more': bool(next_result),
@@ -390,7 +395,8 @@ class FlinkSqlApi(Api):
     try:
       if session and statement_id:
         self.db.close_statement(session_handle=session['id'], operation_handle=statement_id)
-        # self._remove_operation_token_info_from_user(statement_id)     ## Needs to check why Hue db not getting updated
+        LOG.info(f"Removing operation token; statement={statement_id}")
+        self._remove_operation_token_info_from_user(statement_id)
       else:
         return {'status': -1}  # missing operation ids
     except Exception as e:
